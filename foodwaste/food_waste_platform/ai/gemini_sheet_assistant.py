@@ -263,6 +263,10 @@ def _answer_local(question: str, df: pd.DataFrame, summary: dict[str, Any]) -> s
         value = summary.get("production_waste_kg")
         if value is not None:
             return f"The total amount of production waste is {float(value):.2f} kg."
+    if "kitchen" in q and ("most waste" in q or "highest waste" in q):
+        top = summary.get("top_kitchen")
+        if top:
+            return f"Top kitchen: {top['kitchen']} with {float(top['waste_kg']):.2f} kg."
     context_terms = ("kitchen", "device", "commodity", "meal")
     if ("least waste" in q or "minimum waste" in q) and not any(t in q for t in context_terms):
         least = summary.get("least_waste_day")

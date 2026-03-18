@@ -746,7 +746,12 @@ def _answer_local_fallback(
         total = float(summary.get("total_waste_kg", 0.0))
         return f"The total waste is {total:.2f} kg."
 
-    if "top kitchen" in q or "which kitchen" in q or "maximum waste" in q:
+    if (
+        "top kitchen" in q
+        or "which kitchen" in q
+        or "maximum waste" in q
+        or ("kitchen" in q and ("most waste" in q or "highest waste" in q))
+    ):
         by_kitchen = summary.get("waste_by_kitchen", {})
         if by_kitchen:
             kitchen = max(by_kitchen, key=by_kitchen.get)
