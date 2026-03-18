@@ -522,6 +522,15 @@ def _is_domain_question(question: str) -> bool:
     return any(term in q for term in domain_terms)
 
 
+def _secret_present(name: str) -> bool:
+    if os.getenv(name, "").strip():
+        return True
+    try:
+        return bool(st.secrets.get(name))
+    except Exception:
+        return False
+
+
 def _answer_data_question(
     df: pd.DataFrame,
     question: str,
@@ -532,6 +541,15 @@ def _answer_data_question(
         return "Please enter a question."
     if not _is_domain_question(question):
         return "I’m sorry, but I can only assist with questions related to food waste data and sustainability insights."
+
+    if not (_secret_present("GEMINI_API_KEY") and _secret_present("PUBLISHED_SHEET_CSV_URL")):
+        fallback = _answer_local_fallback(df, summary, anomalies, question)
+        if fallback:
+            return fallback
+        return (
+            "Gemini is not configured for this app. "
+            "Turn on local mode (recommended) or add GEMINI_API_KEY and PUBLISHED_SHEET_CSV_URL in Streamlit Secrets."
+        )
 
     try:
         answer = answer_question_with_sheet(question)
@@ -562,6 +580,12 @@ def _get_chat_answer(
     if use_local_calc:
         local_answer = _answer_local_question(df, question)
         return local_answer or _answer_data_question(df, question, summary, anomalies)
+
+    if not (_secret_present("GEMINI_API_KEY") and _secret_present("PUBLISHED_SHEET_CSV_URL")):
+        fallback = _answer_local_fallback(df, summary, anomalies, question)
+        if fallback:
+            return fallback
+        return "Missing Gemini credentials. Add GEMINI_API_KEY and PUBLISHED_SHEET_CSV_URL in Streamlit Secrets."
 
     try:
         answer = answer_question_with_sheet(question)
@@ -683,7 +707,8 @@ def _answer_local_question(df: pd.DataFrame, question: str) -> str | None:
             prod = df.loc[df["waste_type"].astype(str).str.contains("Production", case=False, na=False), "waste_kg"]
             total = pd.to_numeric(prod, errors="coerce").sum()
             return f"The total amount of production waste is {total:.2f} kg."
-    if "least waste" in q or "minimum waste" in q:
+    context_terms = ("kitchen", "device", "commodity", "meal")
+    if ("least waste" in q or "minimum waste" in q) and not any(t in q for t in context_terms):
         if "date" in df.columns and "waste_kg" in df.columns:
             work = df.copy()
             work["date"] = pd.to_datetime(work["date"], errors="coerce", dayfirst=True)
@@ -693,7 +718,7 @@ def _answer_local_question(df: pd.DataFrame, question: str) -> str | None:
             if not by_day.empty:
                 d = by_day.idxmin()
                 return f"The least waste was on {d.isoformat()} with {float(by_day.loc[d]):.2f} kg."
-    if "most waste" in q or "highest waste" in q:
+    if ("most waste" in q or "highest waste" in q) and not any(t in q for t in context_terms):
         if "date" in df.columns and "waste_kg" in df.columns:
             work = df.copy()
             work["date"] = pd.to_datetime(work["date"], errors="coerce", dayfirst=True)

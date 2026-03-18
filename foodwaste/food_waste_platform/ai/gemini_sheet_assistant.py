@@ -5,6 +5,7 @@ import json
 import os
 import re
 import time
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -34,9 +35,45 @@ COLUMN_MAP = {
 
 def _get_required_env(name: str) -> str:
     value = os.getenv(name, "").strip()
-    if not value:
-        raise ValueError(f"Missing required environment variable: {name}")
-    return value
+    if value:
+        return value
+
+    # Local dev convenience: try loading .env from common repo locations.
+    try:
+        from dotenv import load_dotenv
+
+        here = Path(__file__).resolve()
+        candidates = [
+            here.parents[3] / ".env",  # repo root (a:/Project1/.env)
+            here.parents[2] / ".env",  # foodwaste/.env
+            here.parents[1] / ".env",  # food_waste_platform/.env
+        ]
+        for path in candidates:
+            if path.exists():
+                load_dotenv(path, override=False)
+        value = os.getenv(name, "").strip()
+        if value:
+            return value
+    except Exception:
+        pass
+
+    # Streamlit Community Cloud typically provides secrets via st.secrets, not .env files.
+    try:
+        import streamlit as st
+
+        secret = st.secrets.get(name)
+        if secret is not None:
+            value = str(secret).strip()
+            if value:
+                os.environ[name] = value
+                return value
+    except Exception:
+        pass
+
+    raise ValueError(
+        f"Missing {name}. Set it in Streamlit Cloud -> App settings -> Secrets, "
+        f"or set it locally as an environment variable / .env."
+    )
 
 
 def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -226,11 +263,12 @@ def _answer_local(question: str, df: pd.DataFrame, summary: dict[str, Any]) -> s
         value = summary.get("production_waste_kg")
         if value is not None:
             return f"The total amount of production waste is {float(value):.2f} kg."
-    if "least waste" in q or "minimum waste" in q:
+    context_terms = ("kitchen", "device", "commodity", "meal")
+    if ("least waste" in q or "minimum waste" in q) and not any(t in q for t in context_terms):
         least = summary.get("least_waste_day")
         if least:
             return f"The least waste was on {least['date']} with {least['waste_kg']:.2f} kg."
-    if "most waste" in q or "highest waste" in q:
+    if ("most waste" in q or "highest waste" in q) and not any(t in q for t in context_terms):
         top = summary.get("top_waste_day")
         if top:
             return f"The most waste was on {top['date']} with {top['waste_kg']:.2f} kg."
